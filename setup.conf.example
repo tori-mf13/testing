@@ -1,0 +1,13 @@
+# Dev Environment Setup - Example Configuration
+#
+# Copy this file to setup.conf and uncomment the tools you want.
+# Then run: ./setup.sh --all  (it will respect your config)
+#
+# Each line is a category. Uncomment to include it.
+
+essentials
+git
+node
+python
+docker
+cli
