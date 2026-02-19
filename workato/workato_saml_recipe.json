@@ -1,0 +1,207 @@
+{
+  "name": "Okta SAML App Provisioning – Workato Recipe",
+  "description": "Automated recipe that provisions and configures SAML SSO between Okta and Workato, then notifies stakeholders.",
+  "version": "1.0.0",
+  "trigger": {
+    "type": "webhook",
+    "name": "New SAML provisioning request",
+    "description": "Triggered by an incoming webhook (e.g. from a ServiceNow ticket, Jira issue, or Slack command) requesting SAML app setup.",
+    "webhook_url": "https://app.workato.com/webhooks/rest/<YOUR_WEBHOOK_ID>",
+    "expected_payload": {
+      "app_label": "string – display name of the app in Okta",
+      "sso_acs_url": "string – Assertion Consumer Service URL",
+      "audience_uri": "string – SP Entity ID / Audience URI",
+      "requestor_email": "string – email of the person requesting",
+      "groups": ["string – Okta group names to assign"]
+    }
+  },
+  "actions": [
+    {
+      "step": 1,
+      "type": "okta_action",
+      "name": "Search for existing application",
+      "connection": "okta_connection",
+      "operation": "search_applications",
+      "input": {
+        "query": "{{trigger.app_label}}",
+        "limit": 10
+      },
+      "output_variable": "existing_apps"
+    },
+    {
+      "step": 2,
+      "type": "conditional",
+      "name": "Check if app already exists",
+      "condition": "{{existing_apps | where: 'label', trigger.app_label | size}} > 0",
+      "if_true": {
+        "action": "update_saml_app",
+        "goto_step": 4
+      },
+      "if_false": {
+        "action": "create_saml_app",
+        "goto_step": 3
+      }
+    },
+    {
+      "step": 3,
+      "type": "okta_action",
+      "name": "Create SAML 2.0 application",
+      "connection": "okta_connection",
+      "operation": "create_application",
+      "input": {
+        "label": "{{trigger.app_label}}",
+        "signOnMode": "SAML_2_0",
+        "settings": {
+          "signOn": {
+            "ssoAcsUrl": "{{trigger.sso_acs_url}}",
+            "audience": "{{trigger.audience_uri}}",
+            "recipient": "{{trigger.sso_acs_url}}",
+            "destination": "{{trigger.sso_acs_url}}",
+            "subjectNameIdFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+            "subjectNameIdTemplate": "${user.email}",
+            "responseSigned": true,
+            "assertionSigned": true,
+            "signatureAlgorithm": "RSA-SHA256",
+            "digestAlgorithm": "SHA256",
+            "honorForceAuthn": true,
+            "authnContextClassRef": "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+            "attributeStatements": [
+              {
+                "type": "EXPRESSION",
+                "name": "email",
+                "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+                "values": ["user.email"]
+              },
+              {
+                "type": "EXPRESSION",
+                "name": "firstName",
+                "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+                "values": ["user.firstName"]
+              },
+              {
+                "type": "EXPRESSION",
+                "name": "lastName",
+                "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+                "values": ["user.lastName"]
+              }
+            ]
+          }
+        }
+      },
+      "output_variable": "created_app"
+    },
+    {
+      "step": 4,
+      "type": "okta_action",
+      "name": "Activate application",
+      "connection": "okta_connection",
+      "operation": "activate_application",
+      "input": {
+        "app_id": "{{created_app.id}}"
+      }
+    },
+    {
+      "step": 5,
+      "type": "loop",
+      "name": "Assign groups to application",
+      "collection": "{{trigger.groups}}",
+      "loop_variable": "group_name",
+      "actions": [
+        {
+          "step": "5a",
+          "type": "okta_action",
+          "name": "Look up group by name",
+          "operation": "search_groups",
+          "input": {
+            "query": "{{group_name}}",
+            "limit": 5
+          },
+          "output_variable": "found_groups"
+        },
+        {
+          "step": "5b",
+          "type": "conditional",
+          "name": "Assign group if found",
+          "condition": "{{found_groups | size}} > 0",
+          "if_true": {
+            "type": "okta_action",
+            "name": "Assign group to app",
+            "operation": "assign_group_to_application",
+            "input": {
+              "app_id": "{{created_app.id}}",
+              "group_id": "{{found_groups.first.id}}"
+            }
+          },
+          "if_false": {
+            "type": "logger",
+            "message": "Group '{{group_name}}' not found in Okta – skipping."
+          }
+        }
+      ]
+    },
+    {
+      "step": 6,
+      "type": "okta_action",
+      "name": "Retrieve IdP metadata",
+      "connection": "okta_connection",
+      "operation": "get_application_metadata",
+      "input": {
+        "app_id": "{{created_app.id}}"
+      },
+      "output_variable": "idp_metadata"
+    },
+    {
+      "step": 7,
+      "type": "email_action",
+      "name": "Send metadata to requestor",
+      "connection": "smtp_connection",
+      "input": {
+        "to": "{{trigger.requestor_email}}",
+        "subject": "SAML SSO configured for {{trigger.app_label}}",
+        "body": "Hi,\n\nYour SAML application \"{{trigger.app_label}}\" has been configured in Okta.\n\nApp ID: {{created_app.id}}\nSSO URL: {{created_app.settings.signOn.ssoAcsUrl}}\n\nThe IdP metadata XML is attached. Please upload it to your service provider.\n\nThanks,\nIdentity Automation (Workato)"
+      },
+      "attachments": [
+        {
+          "filename": "idp_metadata.xml",
+          "content": "{{idp_metadata}}"
+        }
+      ]
+    },
+    {
+      "step": 8,
+      "type": "slack_action",
+      "name": "Notify IT channel",
+      "connection": "slack_connection",
+      "input": {
+        "channel": "#identity-ops",
+        "message": ":white_check_mark: SAML app *{{trigger.app_label}}* configured in Okta by Workato.\nRequested by: {{trigger.requestor_email}}\nApp ID: `{{created_app.id}}`"
+      }
+    }
+  ],
+  "error_handling": {
+    "on_error": {
+      "type": "slack_action",
+      "name": "Notify on failure",
+      "connection": "slack_connection",
+      "input": {
+        "channel": "#identity-ops",
+        "message": ":x: Workato recipe failed to configure SAML app *{{trigger.app_label}}*.\nError: {{error.message}}\nRequested by: {{trigger.requestor_email}}"
+      }
+    }
+  },
+  "connections": {
+    "okta_connection": {
+      "provider": "okta",
+      "auth_type": "api_token",
+      "notes": "Configure in Workato UI: App Connections > Okta. Requires an API token with Application Administrator privileges."
+    },
+    "smtp_connection": {
+      "provider": "smtp",
+      "notes": "Configure in Workato UI: App Connections > SMTP / Email provider."
+    },
+    "slack_connection": {
+      "provider": "slack",
+      "notes": "Configure in Workato UI: App Connections > Slack. Needs permission to post to #identity-ops."
+    }
+  }
+}

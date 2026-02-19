@@ -1,0 +1,41 @@
+# Okta Connection Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Set credentials via environment variables (preferred) or directly here.
+#
+# Environment variables:
+#   OKTA_ORG_URL    - Your Okta org URL (e.g. https://your-org.okta.com)
+#   OKTA_API_TOKEN  - API token with Application Administrator permissions
+#
+# To create an API token:
+#   1. Sign in to the Okta Admin Console
+#   2. Navigate to Security > API > Tokens
+#   3. Click "Create Token" and give it a meaningful name
+#   4. Copy the token value — it is only shown once
+# ─────────────────────────────────────────────────────────────────────────────
+
+okta:
+  # Override via OKTA_ORG_URL env var (recommended)
+  org_url: ""
+
+  # Override via OKTA_API_TOKEN env var (recommended — do NOT commit tokens)
+  api_token: ""
+
+# ─── Defaults ────────────────────────────────────────────────────────────────
+# Default values applied to every SAML application unless overridden in
+# config/saml_apps.yaml.
+defaults:
+  sign_on_mode: "SAML_2_0"
+  name_id_format: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+  name_id_value: "user.email"
+  response_signed: true
+  assertion_signed: true
+  signature_algorithm: "RSA-SHA256"
+  digest_algorithm: "SHA256"
+  honor_force_authn: true
+  authn_context_class: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"
+  subject_name_id_format: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+
+# ─── Logging ─────────────────────────────────────────────────────────────────
+logging:
+  level: "INFO"         # DEBUG, INFO, WARNING, ERROR
+  file: "okta_saml.log" # Log file path (empty string disables file logging)

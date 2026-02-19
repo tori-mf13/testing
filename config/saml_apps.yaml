@@ -1,0 +1,97 @@
+# SAML Application Definitions
+# Each entry defines a standard SAML 2.0 application to configure in Okta.
+#
+# Required fields:
+#   label           - Display name of the application in Okta
+#   sso_acs_url     - Assertion Consumer Service URL (where Okta sends SAML responses)
+#   audience_uri    - SP Entity ID / Audience URI
+#
+# Optional fields:
+#   recipient_url        - Recipient URL (defaults to sso_acs_url)
+#   destination_url      - Destination URL (defaults to sso_acs_url)
+#   default_relay_state  - Default RelayState sent with the SAML response
+#   name_id_format       - NameID format (default: urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress)
+#   name_id_value        - Okta attribute for NameID (default: user.email)
+#   response_signed      - Sign the SAML response (default: true)
+#   assertion_signed     - Sign the SAML assertion (default: true)
+#   signature_algorithm  - RSA-SHA1 or RSA-SHA256 (default: RSA-SHA256)
+#   digest_algorithm     - SHA1 or SHA256 (default: SHA256)
+#   honor_force_authn    - Honor ForceAuthn in AuthnRequest (default: true)
+#   authn_context_class  - Authentication context class reference
+#   attribute_statements - Custom SAML attribute statements
+#   groups_assigned      - List of Okta group names to assign to the application
+#   inline_hooks         - List of inline hook IDs to attach
+#   sso_login_url        - IdP-initiated SSO login URL override
+
+applications:
+  # ── Example: Workato ──────────────────────────────────────────────────
+  - label: "Workato"
+    sso_acs_url: "https://www.workato.com/saml/init"
+    audience_uri: "https://www.workato.com/saml/metadata"
+    default_relay_state: ""
+    name_id_format: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+    name_id_value: "user.email"
+    response_signed: true
+    assertion_signed: true
+    signature_algorithm: "RSA-SHA256"
+    digest_algorithm: "SHA256"
+    attribute_statements:
+      - name: "email"
+        namespace: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic"
+        values:
+          - "user.email"
+      - name: "firstName"
+        namespace: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic"
+        values:
+          - "user.firstName"
+      - name: "lastName"
+        namespace: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic"
+        values:
+          - "user.lastName"
+    groups_assigned:
+      - "Workato-Users"
+      - "Engineering"
+
+  # ── Example: Datadog ──────────────────────────────────────────────────
+  - label: "Datadog"
+    sso_acs_url: "https://app.datadoghq.com/account/saml/assertion"
+    audience_uri: "https://app.datadoghq.com/account/saml/metadata.xml"
+    name_id_format: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+    name_id_value: "user.email"
+    response_signed: true
+    assertion_signed: true
+    signature_algorithm: "RSA-SHA256"
+    digest_algorithm: "SHA256"
+    attribute_statements: []
+    groups_assigned:
+      - "Datadog-Users"
+
+  # ── Example: Slack ────────────────────────────────────────────────────
+  - label: "Slack"
+    sso_acs_url: "https://your-workspace.slack.com/sso/saml"
+    audience_uri: "https://slack.com"
+    name_id_format: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+    name_id_value: "user.email"
+    response_signed: true
+    assertion_signed: true
+    signature_algorithm: "RSA-SHA256"
+    digest_algorithm: "SHA256"
+    attribute_statements:
+      - name: "User.Email"
+        namespace: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic"
+        values:
+          - "user.email"
+      - name: "User.Username"
+        namespace: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic"
+        values:
+          - "user.login"
+      - name: "first_name"
+        namespace: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic"
+        values:
+          - "user.firstName"
+      - name: "last_name"
+        namespace: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic"
+        values:
+          - "user.lastName"
+    groups_assigned:
+      - "Slack-Users"
