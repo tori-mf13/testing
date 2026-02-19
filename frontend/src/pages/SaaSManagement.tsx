@@ -147,7 +147,7 @@ export default function SaaSManagement() {
       </div>
 
       {/* Table */}
-      <DataTable columns={columns} data={filtered as Record<string, unknown>[]} />
+      <DataTable columns={columns} data={filtered} />
 
       {/* Cost Optimization Recommendations */}
       {underutilized.length > 0 && (

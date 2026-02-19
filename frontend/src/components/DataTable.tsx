@@ -1,28 +1,29 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-interface Column<T> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface Column {
   key: string;
   header: string;
-  render?: (item: T) => React.ReactNode;
+  render?: (item: any) => React.ReactNode;
   sortable?: boolean;
 }
 
-interface DataTableProps<T> {
-  columns: Column<T>[];
-  data: T[];
+interface DataTableProps {
+  columns: Column[];
+  data: any[];
   total?: number;
   page?: number;
   totalPages?: number;
   onPageChange?: (page: number) => void;
-  onRowClick?: (item: T) => void;
+  onRowClick?: (item: any) => void;
   emptyMessage?: string;
   loading?: boolean;
 }
 
-export default function DataTable<T extends Record<string, unknown>>({
+export default function DataTable({
   columns, data, total, page = 1, totalPages = 1, onPageChange, onRowClick, emptyMessage = 'No data found', loading
-}: DataTableProps<T>) {
+}: DataTableProps) {
   if (loading) {
     return (
       <div className="card">

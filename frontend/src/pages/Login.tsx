@@ -4,14 +4,11 @@ import { useAuthStore, useThemeStore } from '../store';
 import { Sun, Moon, Loader2 } from 'lucide-react';
 
 export default function Login() {
-  const [email, setEmail] = useState('admin@unifyit.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isRegister, setIsRegister] = useState(false);
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const { login, register } = useAuthStore();
+  const { login, demoLogin } = useAuthStore();
   const { isDark, toggle: toggleTheme } = useThemeStore();
   const navigate = useNavigate();
 
@@ -21,14 +18,8 @@ export default function Login() {
     setLoading(true);
 
     try {
-      if (isRegister) {
-        await register({ email, password, firstName, lastName });
-        setIsRegister(false);
-        setError('Account created! Please sign in.');
-      } else {
-        await login(email, password);
-        navigate('/dashboard');
-      }
+      await login(email, password);
+      navigate('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -36,19 +27,9 @@ export default function Login() {
     }
   }
 
-  // Demo login shortcut
-  function demoLogin(role: string) {
-    const accounts: Record<string, { email: string; password: string }> = {
-      admin: { email: 'admin@unifyit.com', password: 'admin123' },
-      staff: { email: 'tech@unifyit.com', password: 'staff123' },
-      manager: { email: 'manager@unifyit.com', password: 'staff123' },
-      readonly: { email: 'viewer@unifyit.com', password: 'staff123' },
-    };
-    const acc = accounts[role];
-    if (acc) {
-      setEmail(acc.email);
-      setPassword(acc.password);
-    }
+  function handleDemoLogin(role: string) {
+    demoLogin(role);
+    navigate('/dashboard');
   }
 
   return (
@@ -67,74 +48,54 @@ export default function Login() {
           <p className="text-sm text-slate-500 mt-2">Unified IT Management Platform</p>
         </div>
 
-        {/* Form */}
-        <div className="card">
-          <h2 className="text-lg font-semibold text-slate-200 mb-6">{isRegister ? 'Create Account' : 'Sign In'}</h2>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {isRegister && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">First Name</label>
-                  <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} className="input w-full" required />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Last Name</label>
-                  <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} className="input w-full" required />
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input w-full" placeholder="you@company.com" required />
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">Password</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input w-full" placeholder="Enter your password" required />
-            </div>
-
-            {error && (
-              <div className={`text-sm p-2.5 rounded-lg ${error.includes('created') ? 'bg-emerald-900/30 text-emerald-400' : 'bg-red-900/30 text-red-400'}`}>
-                {error}
-              </div>
-            )}
-
-            <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
-              {loading && <Loader2 size={16} className="animate-spin" />}
-              {isRegister ? 'Create Account' : 'Sign In'}
-            </button>
-          </form>
-
-          <div className="mt-4 text-center">
-            <button onClick={() => setIsRegister(!isRegister)} className="text-sm text-brand-400 hover:text-brand-300 transition-colors">
-              {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Register"}
-            </button>
-          </div>
-        </div>
-
-        {/* Demo accounts */}
-        <div className="mt-6">
-          <p className="text-xs text-slate-600 text-center mb-3">Quick login with demo accounts:</p>
-          <div className="grid grid-cols-2 gap-2">
+        {/* Demo login — prominent, no backend needed */}
+        <div className="card mb-4">
+          <h2 className="text-lg font-semibold text-slate-200 mb-2">Try the Demo</h2>
+          <p className="text-sm text-slate-500 mb-4">No account or server needed. Pick a role to explore:</p>
+          <div className="grid grid-cols-2 gap-3">
             {[
-              { role: 'admin', label: 'Admin', desc: 'Full access to everything' },
-              { role: 'staff', label: 'IT Staff', desc: 'Technical operations' },
-              { role: 'manager', label: 'Manager', desc: 'Approvals & oversight' },
-              { role: 'readonly', label: 'Read Only', desc: 'View-only access' },
+              { role: 'admin', label: 'Admin', desc: 'Full access to everything', color: 'from-brand-600 to-brand-700' },
+              { role: 'staff', label: 'IT Staff', desc: 'Technical operations', color: 'from-emerald-600 to-emerald-700' },
+              { role: 'manager', label: 'Manager', desc: 'Approvals & oversight', color: 'from-purple-600 to-purple-700' },
+              { role: 'readonly', label: 'Read Only', desc: 'View-only access', color: 'from-slate-600 to-slate-700' },
             ].map((acc) => (
               <button
                 key={acc.role}
-                onClick={() => demoLogin(acc.role)}
-                className="p-2.5 bg-surface-900 border border-slate-800 rounded-lg text-left hover:border-slate-700 transition-colors"
+                onClick={() => handleDemoLogin(acc.role)}
+                className={`p-3 bg-gradient-to-br ${acc.color} rounded-lg text-left hover:opacity-90 transition-opacity`}
               >
-                <span className="text-xs font-medium text-slate-300">{acc.label}</span>
-                <p className="text-[10px] text-slate-600">{acc.desc}</p>
+                <span className="text-sm font-semibold text-white">{acc.label}</span>
+                <p className="text-[11px] text-white/70 mt-0.5">{acc.desc}</p>
               </button>
             ))}
           </div>
         </div>
+
+        {/* Regular login form — secondary, for when backend is running */}
+        <details className="group">
+          <summary className="text-xs text-slate-600 text-center cursor-pointer hover:text-slate-400 transition-colors list-none">
+            Or sign in with credentials (requires backend) ▾
+          </summary>
+          <div className="card mt-3">
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Email</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input w-full" placeholder="you@company.com" required />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Password</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input w-full" placeholder="Enter your password" required />
+              </div>
+              {error && (
+                <div className="text-sm p-2.5 rounded-lg bg-red-900/30 text-red-400">{error}</div>
+              )}
+              <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
+                {loading && <Loader2 size={16} className="animate-spin" />}
+                Sign In
+              </button>
+            </form>
+          </div>
+        </details>
       </div>
     </div>
   );

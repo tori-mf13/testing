@@ -6,7 +6,7 @@ interface StatCardProps {
   label: string;
   value: string | number;
   subtitle?: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ComponentType<Record<string, unknown>>;
   color?: 'blue' | 'green' | 'red' | 'yellow' | 'purple';
   tooltip?: string;
   trend?: { value: number; isPositive: boolean };

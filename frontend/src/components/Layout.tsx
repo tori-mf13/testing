@@ -14,7 +14,7 @@ import AIChatSidebar from './AIChatSidebar';
 interface NavItem {
   path: string;
   label: string;
-  icon: React.ComponentType<{ size?: number }>;
+  icon: React.ComponentType<Record<string, unknown>>;
   roles?: string[];
   shortcut?: string;
 }

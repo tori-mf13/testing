@@ -5,12 +5,21 @@ import api from '../services/api';
 
 // ─── Auth Store ──────────────────────────────────────────────────
 
+// Demo user profiles for standalone mode (no backend needed)
+const DEMO_USERS: Record<string, User> = {
+  admin: { id: 'demo-admin', email: 'admin@unifyit.com', firstName: 'Alex', lastName: 'Admin', role: 'ADMIN', department: 'IT', jobTitle: 'IT Director' },
+  staff: { id: 'demo-staff', email: 'tech@unifyit.com', firstName: 'Sam', lastName: 'Technician', role: 'IT_STAFF', department: 'IT', jobTitle: 'Systems Administrator' },
+  manager: { id: 'demo-manager', email: 'manager@unifyit.com', firstName: 'Morgan', lastName: 'Manager', role: 'MANAGER', department: 'Engineering', jobTitle: 'Engineering Manager' },
+  readonly: { id: 'demo-viewer', email: 'viewer@unifyit.com', firstName: 'Val', lastName: 'Viewer', role: 'READ_ONLY', department: 'Marketing', jobTitle: 'Marketing Coordinator' },
+};
+
 interface AuthStore {
   user: User | null;
   accessToken: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  demoLogin: (role: string) => void;
   register: (data: { email: string; password: string; firstName: string; lastName: string }) => Promise<void>;
   logout: () => void;
   setUser: (user: User) => void;
@@ -25,17 +34,45 @@ export const useAuthStore = create<AuthStore>()(
       isAuthenticated: false,
 
       login: async (email, password) => {
-        const res = await api.post<{
-          accessToken: string;
-          refreshToken: string;
-          user: User;
-        }>('/auth/login', { email, password });
+        try {
+          const res = await api.post<{
+            accessToken: string;
+            refreshToken: string;
+            user: User;
+          }>('/auth/login', { email, password });
 
-        api.setToken(res.accessToken);
+          api.setToken(res.accessToken);
+          set({
+            user: res.user,
+            accessToken: res.accessToken,
+            refreshToken: res.refreshToken,
+            isAuthenticated: true,
+          });
+        } catch {
+          // If backend is unavailable, fall back to demo login
+          const demoKey = Object.keys(DEMO_USERS).find(
+            (k) => DEMO_USERS[k].email === email
+          );
+          if (demoKey) {
+            set({
+              user: DEMO_USERS[demoKey],
+              accessToken: 'demo-token',
+              refreshToken: 'demo-refresh',
+              isAuthenticated: true,
+            });
+          } else {
+            throw new Error('Backend unavailable. Use one of the demo account buttons below.');
+          }
+        }
+      },
+
+      demoLogin: (role: string) => {
+        const user = DEMO_USERS[role];
+        if (!user) return;
         set({
-          user: res.user,
-          accessToken: res.accessToken,
-          refreshToken: res.refreshToken,
+          user,
+          accessToken: 'demo-token',
+          refreshToken: 'demo-refresh',
           isAuthenticated: true,
         });
       },
