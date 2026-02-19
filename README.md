@@ -1,22 +1,8 @@
 # Okta SAML Configuration Script
 
-Interactive wizard that configures standard SAML 2.0 applications in Okta.
-Just run the script — it prompts for everything with clear instructions at
-each step.
-
-## Repository Structure
-
-```
-.
-├── okta_saml_config.py          # Main script — interactive wizard + batch mode
-├── requirements.txt             # Python dependencies
-├── config/
-│   ├── okta_config.yaml         # Okta connection settings and defaults
-│   └── saml_apps.yaml           # SAML application definitions (auto-saved)
-└── workato/
-    ├── workato_saml_recipe.json # Importable Workato recipe definition
-    └── WORKATO_PROCESS.md       # Workato process documentation
-```
+Interactive CLI wizard that configures standard SAML 2.0 applications in Okta.
+Just run the script — it prompts for everything, starting with which Okta
+tenant you are targeting.
 
 ## Quick Start
 
@@ -25,53 +11,120 @@ pip install -r requirements.txt
 python okta_saml_config.py
 ```
 
-That's it. The wizard walks you through:
+That's it. The wizard handles the rest.
 
-1. **Okta credentials** — org URL and API token (or reads `OKTA_ORG_URL` / `OKTA_API_TOKEN` env vars)
-2. **Choose an action** — new app, batch from YAML, export metadata, or exit
-3. **Application identity** — name, ACS URL, audience URI (with examples and explanations)
-4. **Optional URLs** — recipient, destination, relay state (defaults pre-filled)
-5. **NameID configuration** — format and value picked from a numbered menu
-6. **Signing & security** — algorithm and signing options as yes/no prompts
-7. **Attribute statements** — add as many as needed, one at a time
-8. **Group assignment** — comma-separated list of Okta groups
-9. **Review & confirm** — full summary table before any API call is made
-10. **Save to YAML** — optionally saves the definition for future batch runs
+## How It Works
 
-Every field shows an instruction explaining what to enter, where to find the
-value, and an example. Sensible defaults are pre-filled in `[brackets]` —
-just press Enter to accept them.
+When you run the script with no arguments, it walks you through:
+
+1. **Select Okta tenant** — pick from Production, Preview, or Development
+   (defined in `config/okta_config.yaml`). The script shows the org URL and
+   description for each so you always know where you're pointing.
+2. **Authenticate** — reads the API token from a tenant-specific environment
+   variable (e.g. `$OKTA_API_TOKEN_PROD`), or prompts you for it. Verifies
+   the connection before continuing.
+3. **Choose an action** — configure a new app, run from YAML, export metadata,
+   switch tenant, or exit.
+4. **Enter app details** — 7 guided steps with instructions, examples, and
+   sensible defaults for every field.
+5. **Review & confirm** — full summary table showing the target tenant before
+   any API call is made.
+6. **Production guard** — if the tenant has `require_confirmation: true`, you
+   get an extra confirmation prompt before every write operation.
+
+## How Does It Know Which Okta Tenant?
+
+Tenants are defined in `config/okta_config.yaml`:
+
+```yaml
+tenants:
+  - name: "Production"
+    org_url: "https://your-company.okta.com"
+    token_env_var: "OKTA_API_TOKEN_PROD"
+    require_confirmation: true
+    description: "Live production tenant — changes affect all employees"
+
+  - name: "Preview"
+    org_url: "https://your-company.oktapreview.com"
+    token_env_var: "OKTA_API_TOKEN_PREVIEW"
+    require_confirmation: false
+    description: "Pre-production preview tenant — safe for testing"
+
+  - name: "Development"
+    org_url: "https://dev-123456.okta.com"
+    token_env_var: "OKTA_API_TOKEN_DEV"
+    require_confirmation: false
+    description: "Developer sandbox — free to experiment"
+```
+
+Each tenant has its own:
+- **org_url** — the Okta org base URL
+- **token_env_var** — environment variable name holding the API token
+  (tokens are never stored in config files)
+- **require_confirmation** — when `true`, the script forces an extra yes/no
+  before every write to prevent accidental production changes
+- **description** — displayed in the tenant selection menu
+
+Set your tokens before running:
+```bash
+export OKTA_API_TOKEN_PROD="00abc..."
+export OKTA_API_TOKEN_PREVIEW="00xyz..."
+export OKTA_API_TOKEN_DEV="00dev..."
+```
+
+## When To Use This Script
+
+| Scenario | How |
+|----------|-----|
+| Onboarding a new SaaS app (e.g. vendor sends you SAML config) | Run the wizard, enter the ACS URL and Entity ID they gave you |
+| Replicating an app from preview to production | Configure in Preview first, save to YAML, then batch-apply to Production |
+| Bulk-provisioning multiple apps at once | Define them in `config/saml_apps.yaml`, run `--batch --tenant Preview` |
+| Exporting IdP metadata to send to a vendor | `--export-metadata --tenant Production --app "Workato"` |
+| Auditing what would be configured (without changing anything) | `--dry-run` in interactive mode or `--dry-run --batch --tenant Production` |
 
 ## Usage Modes
 
 ```bash
-# Interactive wizard (default — just run it)
+# Interactive wizard (default)
 python okta_saml_config.py
 
-# Interactive wizard in dry-run mode (no API calls)
+# Interactive wizard, dry-run (no API calls)
 python okta_saml_config.py --dry-run
 
-# Non-interactive batch mode from YAML
-python okta_saml_config.py --batch
+# Non-interactive batch (requires --tenant)
+python okta_saml_config.py --batch --tenant Production
 
-# Batch mode for a single app
-python okta_saml_config.py --batch --app "Workato"
+# Batch a single app
+python okta_saml_config.py --batch --tenant Preview --app "Workato"
 
 # Export IdP metadata
-python okta_saml_config.py --export-metadata --app "Workato"
+python okta_saml_config.py --export-metadata --tenant Production --app "Workato"
 ```
 
 ### CLI Flags
 
-| Flag                 | Description                                         |
-|----------------------|-----------------------------------------------------|
-| *(no flags)*         | Launch the interactive wizard                       |
-| `--batch`            | Non-interactive: configure apps from YAML           |
-| `--app <label>`      | Target a single app (with `--batch` or `--export-metadata`) |
-| `--dry-run`          | Validate without calling the Okta API               |
-| `--export-metadata`  | Print IdP metadata XML (requires `--app`)           |
-| `--config <path>`    | Custom path to `okta_config.yaml`                   |
-| `--apps-file <path>` | Custom path to `saml_apps.yaml`                     |
+| Flag                 | Description                                              |
+|----------------------|----------------------------------------------------------|
+| *(no flags)*         | Launch the interactive wizard                            |
+| `--tenant <name>`    | Tenant name (Production, Preview, Development, etc.)     |
+| `--batch`            | Non-interactive: configure apps from YAML (needs --tenant)|
+| `--app <label>`      | Target a single app (with --batch or --export-metadata)  |
+| `--dry-run`          | Validate without calling the Okta API                    |
+| `--export-metadata`  | Print IdP metadata XML (needs --tenant and --app)        |
+
+## Repository Structure
+
+```
+.
+├── okta_saml_config.py          # Main script — interactive wizard + batch mode
+├── requirements.txt             # Python dependencies (requests, pyyaml)
+├── config/
+│   ├── okta_config.yaml         # Tenant definitions, defaults, logging
+│   └── saml_apps.yaml           # SAML application definitions
+└── workato/
+    ├── workato_saml_recipe.json # Importable Workato recipe definition
+    └── WORKATO_PROCESS.md       # Workato process documentation
+```
 
 ## Workato Integration
 

@@ -1,27 +1,47 @@
-# Okta Connection Configuration
+# Okta Tenant Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-# Set credentials via environment variables (preferred) or directly here.
+# Define every Okta tenant (org) your team operates. The script will present
+# these as a numbered menu so the operator always knows exactly which
+# environment they are targeting.
 #
-# Environment variables:
-#   OKTA_ORG_URL    - Your Okta org URL (e.g. https://your-org.okta.com)
-#   OKTA_API_TOKEN  - API token with Application Administrator permissions
+# API tokens:
+#   Store tokens in environment variables, NOT in this file. The env var
+#   name for each tenant is listed in the "token_env_var" field. The script
+#   reads the token from that env var at runtime.
 #
-# To create an API token:
-#   1. Sign in to the Okta Admin Console
-#   2. Navigate to Security > API > Tokens
-#   3. Click "Create Token" and give it a meaningful name
-#   4. Copy the token value — it is only shown once
+#   To create an API token:
+#     1. Sign in to the Okta Admin Console for that tenant
+#     2. Navigate to Security > API > Tokens
+#     3. Click "Create Token" — name it clearly (e.g. "saml-config-prod")
+#     4. Copy the token value — it is shown only once
+#     5. Export it:  export OKTA_API_TOKEN_PROD="<token>"
 # ─────────────────────────────────────────────────────────────────────────────
 
-okta:
-  # Override via OKTA_ORG_URL env var (recommended)
-  org_url: ""
+tenants:
+  # ── Production ─────────────────────────────────────────────────────────
+  - name: "Production"
+    org_url: "https://your-company.okta.com"
+    token_env_var: "OKTA_API_TOKEN_PROD"
+    # Extra confirmation prompt before any write operation
+    require_confirmation: true
+    description: "Live production tenant — changes affect all employees"
 
-  # Override via OKTA_API_TOKEN env var (recommended — do NOT commit tokens)
-  api_token: ""
+  # ── Preview / Staging ──────────────────────────────────────────────────
+  - name: "Preview"
+    org_url: "https://your-company.oktapreview.com"
+    token_env_var: "OKTA_API_TOKEN_PREVIEW"
+    require_confirmation: false
+    description: "Pre-production preview tenant — safe for testing"
+
+  # ── Development / Sandbox ──────────────────────────────────────────────
+  - name: "Development"
+    org_url: "https://dev-123456.okta.com"
+    token_env_var: "OKTA_API_TOKEN_DEV"
+    require_confirmation: false
+    description: "Developer sandbox — free to experiment"
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
-# Default values applied to every SAML application unless overridden in
+# Default SAML values applied to every application unless overridden in
 # config/saml_apps.yaml.
 defaults:
   sign_on_mode: "SAML_2_0"
@@ -33,7 +53,6 @@ defaults:
   digest_algorithm: "SHA256"
   honor_force_authn: true
   authn_context_class: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"
-  subject_name_id_format: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 logging:
