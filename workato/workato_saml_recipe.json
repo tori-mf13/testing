@@ -321,7 +321,7 @@
       "connection": "slack_connection",
       "input": {
         "channel": "#identity-ops",
-        "message": ":x: Workato recipe failed to configure SAML app *{{trigger.app_label}}* in *{{tenant_config.label}}*.\nError: {{error.message}}\nRequested by: {{trigger.requestor_email}}\nTenant: {{trigger.tenant}}"
+        "message": ":x: Workato recipe failed to configure SAML app *{{trigger.app_label}}* in *{{tenant_config.label | default: trigger.tenant | default: '(unknown)'}}*.\nError: {{error.message}}\nFailed at step: {{error.step | default: '(unknown)'}}\nRequested by: {{trigger.requestor_email}}\nTenant: {{trigger.tenant | default: '(not provided)'}}"
       }
     }
   },

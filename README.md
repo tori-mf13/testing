@@ -94,6 +94,9 @@ python okta_saml_config.py --dry-run
 # Non-interactive batch (requires --tenant)
 python okta_saml_config.py --batch --tenant Production
 
+# Batch to production, skip confirmation prompts
+python okta_saml_config.py --batch --tenant Production --yes
+
 # Batch a single app
 python okta_saml_config.py --batch --tenant Preview --app "Workato"
 
@@ -110,7 +113,10 @@ python okta_saml_config.py --export-metadata --tenant Production --app "Workato"
 | `--batch`            | Non-interactive: configure apps from YAML (needs --tenant)|
 | `--app <label>`      | Target a single app (with --batch or --export-metadata)  |
 | `--dry-run`          | Validate without calling the Okta API                    |
+| `--yes`, `-y`        | Skip confirmation prompts (use with --batch for CI/CD)   |
 | `--export-metadata`  | Print IdP metadata XML (needs --tenant and --app)        |
+| `--config <path>`    | Path to okta_config.yaml (default: config/okta_config.yaml) |
+| `--apps-file <path>` | Path to saml_apps.yaml (default: config/saml_apps.yaml)  |
 
 ## Repository Structure
 
@@ -131,10 +137,12 @@ python okta_saml_config.py --export-metadata --tenant Production --app "Workato"
 For fully automated provisioning triggered by service requests, see
 [`workato/WORKATO_PROCESS.md`](workato/WORKATO_PROCESS.md). The Workato recipe:
 
-1. Receives a webhook from a ticketing system (ServiceNow, Jira, Slack)
-2. Creates or updates the SAML app in Okta
-3. Assigns groups to the application
-4. Retrieves IdP metadata and emails it to the requestor
-5. Notifies the `#identity-ops` Slack channel
+1. Receives a webhook with a `tenant` field (production, preview, development)
+2. Routes to the correct Okta connection based on tenant
+3. **Requires manager approval in Slack** for production provisioning
+4. Creates or updates the SAML app in the target Okta tenant
+5. Assigns groups to the application
+6. Retrieves IdP metadata and emails it to the requestor
+7. Notifies `#identity-ops` on Slack with tenant-aware details
 
 Import `workato/workato_saml_recipe.json` into your Workato workspace to get started.

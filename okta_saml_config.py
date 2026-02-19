@@ -49,6 +49,7 @@ OKTA_CONFIG_PATH = CONFIG_DIR / "okta_config.yaml"
 SAML_APPS_PATH = CONFIG_DIR / "saml_apps.yaml"
 
 RATE_LIMIT_PAUSE = 1.0
+MAX_RATE_LIMIT_RETRIES = 5
 
 logger = logging.getLogger("okta_saml_config")
 
@@ -283,15 +284,26 @@ class OktaClient:
             }
         )
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
+    def _request(
+        self, method: str, path: str, _retry_count: int = 0, **kwargs: Any
+    ) -> requests.Response:
         url = f"{self.base_url}/api/v1{path}"
         resp = self.session.request(method, url, **kwargs)
         if resp.status_code == 429:
+            if _retry_count >= MAX_RATE_LIMIT_RETRIES:
+                logger.error(
+                    "Rate-limited %d times in a row — giving up on %s %s",
+                    _retry_count, method, path,
+                )
+                resp.raise_for_status()
             reset = int(resp.headers.get("X-Rate-Limit-Reset", time.time() + 30))
             wait = max(reset - int(time.time()), 1)
-            logger.warning("Rate-limited — waiting %d seconds", wait)
+            logger.warning(
+                "Rate-limited — waiting %d seconds (attempt %d/%d)",
+                wait, _retry_count + 1, MAX_RATE_LIMIT_RETRIES,
+            )
             time.sleep(wait)
-            return self._request(method, path, **kwargs)
+            return self._request(method, path, _retry_count=_retry_count + 1, **kwargs)
         resp.raise_for_status()
         return resp
 
@@ -355,7 +367,7 @@ def build_saml_payload(app_def: dict, defaults: dict) -> dict:
                 "name": attr["name"],
                 "namespace": attr.get(
                     "namespace",
-                    "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
+                    "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
                 ),
                 "values": attr.get("values", []),
             }
@@ -406,6 +418,7 @@ def configure_app(
     defaults: dict,
     dry_run: bool = False,
     require_confirmation: bool = False,
+    auto_confirm: bool = False,
 ) -> dict | None:
     label = app_def["label"]
     payload = build_saml_payload(app_def, defaults)
@@ -416,7 +429,7 @@ def configure_app(
         return None
 
     # Production guard — extra confirmation before writing
-    if require_confirmation:
+    if require_confirmation and not auto_confirm:
         print(
             f"\n  {YELLOW}{BOLD}You are about to write to the "
             f"{client.tenant_name} tenant.{RESET}"
@@ -427,6 +440,10 @@ def configure_app(
         ):
             print(f"  {YELLOW}Skipped.{RESET}")
             return None
+    elif require_confirmation and auto_confirm:
+        logger.info(
+            "[%s] --yes flag set, auto-confirming: %s", client.tenant_name, label
+        )
 
     existing = client.find_app_by_label(label)
     if existing:
@@ -779,9 +796,15 @@ def _interactive_yaml_batch(
             return
         selected = []
         for idx_str in indices.split(","):
-            idx = int(idx_str.strip()) - 1
+            try:
+                idx = int(idx_str.strip()) - 1
+            except ValueError:
+                print(f"  {YELLOW}Skipping invalid number: '{idx_str.strip()}'{RESET}")
+                continue
             if 0 <= idx < len(all_apps):
                 selected.append(all_apps[idx])
+            else:
+                print(f"  {YELLOW}Skipping out-of-range number: {idx + 1}{RESET}")
         all_apps = selected
 
     if not all_apps:
@@ -867,6 +890,11 @@ def parse_args() -> argparse.Namespace:
         help="Validate configuration without calling the Okta API.",
     )
     parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Skip confirmation prompts (use with --batch to avoid interactive blocking).",
+    )
+    parser.add_argument(
         "--export-metadata",
         action="store_true",
         help="Export IdP SAML metadata XML for --app (requires --tenant and --app).",
@@ -908,6 +936,22 @@ def main() -> None:
             sys.exit(1)
 
         client = OktaClient(tenant["org_url"], api_token, tenant_name=tenant["name"])
+
+        # Verify connection before doing any work
+        try:
+            org_info = client.get("/org")
+            logger.info(
+                "[%s] Connected to %s",
+                tenant["name"], org_info.get("companyName", tenant["org_url"]),
+            )
+        except requests.exceptions.HTTPError as exc:
+            logger.error("Authentication failed for %s: %s", tenant["name"], exc)
+            logger.error("Check the %s environment variable and try again.", env_var)
+            sys.exit(1)
+        except requests.exceptions.ConnectionError:
+            logger.error("Could not reach %s. Check the URL and your network.", tenant["org_url"])
+            sys.exit(1)
+
         defaults = okta_cfg.get("defaults", {})
         require_confirm = tenant.get("require_confirmation", False)
 
@@ -927,12 +971,19 @@ def main() -> None:
                 sys.exit(1)
 
         logger.info("[%s] Configuring %d SAML application(s)…", tenant["name"], len(all_apps))
+        if require_confirm and not args.yes:
+            logger.warning(
+                "Tenant '%s' requires confirmation but --yes was not passed. "
+                "Each app will prompt interactively. Use --yes to auto-confirm.",
+                tenant["name"],
+            )
         results = []
         for app_def in all_apps:
             result = configure_app(
                 client, app_def, defaults,
                 dry_run=args.dry_run,
                 require_confirmation=require_confirm,
+                auto_confirm=args.yes,
             )
             if result:
                 results.append(result)
