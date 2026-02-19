@@ -1,0 +1,356 @@
+{
+  "name": "Okta SAML App Provisioning – Workato Recipe",
+  "description": "Automated recipe that provisions SAML 2.0 apps in Okta with multi-tenant routing, manager approval for production, and full SAML configuration support.",
+  "version": "2.0.0",
+  "trigger": {
+    "type": "webhook",
+    "name": "New SAML provisioning request",
+    "description": "Triggered by an incoming webhook (e.g. from a ServiceNow ticket, Jira issue, or Slack command) requesting SAML app setup.",
+    "webhook_url": "https://app.workato.com/webhooks/rest/<YOUR_WEBHOOK_ID>",
+    "expected_payload": {
+      "tenant": "string (required) – which Okta tenant to target: 'production', 'preview', or 'development'",
+      "app_label": "string (required) – display name of the app in Okta",
+      "sso_acs_url": "string (required) – Assertion Consumer Service URL",
+      "audience_uri": "string (required) – SP Entity ID / Audience URI",
+      "requestor_email": "string (required) – email of the person requesting",
+      "groups": ["string – Okta group names to assign"],
+      "recipient_url": "string (optional) – defaults to sso_acs_url",
+      "destination_url": "string (optional) – defaults to sso_acs_url",
+      "default_relay_state": "string (optional) – RelayState URL after login",
+      "name_id_format": "string (optional) – NameID format, defaults to emailAddress",
+      "name_id_value": "string (optional) – Okta attribute for NameID, defaults to user.email",
+      "response_signed": "boolean (optional) – sign SAML response, defaults to true",
+      "assertion_signed": "boolean (optional) – sign SAML assertion, defaults to true",
+      "signature_algorithm": "string (optional) – RSA-SHA256 or RSA-SHA1, defaults to RSA-SHA256",
+      "digest_algorithm": "string (optional) – SHA256 or SHA1, defaults to SHA256",
+      "attribute_statements": [
+        {
+          "name": "string – attribute name as SP expects it",
+          "namespace": "string (optional) – defaults to urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+          "values": ["string – Okta user profile expression (e.g. user.email)"]
+        }
+      ]
+    }
+  },
+  "actions": [
+    {
+      "step": 1,
+      "type": "conditional",
+      "name": "Validate required fields",
+      "condition": "{{trigger.tenant}} is present AND {{trigger.app_label}} is present AND {{trigger.sso_acs_url}} is present AND {{trigger.audience_uri}} is present AND {{trigger.requestor_email}} is present",
+      "if_false": {
+        "type": "stop_recipe",
+        "error_message": "Missing required fields. Payload must include: tenant, app_label, sso_acs_url, audience_uri, requestor_email."
+      }
+    },
+    {
+      "step": 2,
+      "type": "lookup_table",
+      "name": "Resolve Okta tenant connection",
+      "description": "Maps the tenant name from the webhook to the correct Okta connection and determines whether approval is required.",
+      "table": {
+        "production": {
+          "okta_connection": "okta_connection_prod",
+          "org_url": "https://your-company.okta.com",
+          "require_approval": true,
+          "label": "Production"
+        },
+        "preview": {
+          "okta_connection": "okta_connection_preview",
+          "org_url": "https://your-company.oktapreview.com",
+          "require_approval": false,
+          "label": "Preview"
+        },
+        "development": {
+          "okta_connection": "okta_connection_dev",
+          "org_url": "https://dev-123456.okta.com",
+          "require_approval": false,
+          "label": "Development"
+        }
+      },
+      "lookup_key": "{{trigger.tenant | downcase}}",
+      "output_variable": "tenant_config",
+      "on_miss": {
+        "type": "stop_recipe",
+        "error_message": "Unknown tenant '{{trigger.tenant}}'. Must be one of: production, preview, development."
+      }
+    },
+    {
+      "step": 3,
+      "type": "conditional",
+      "name": "Require approval for production",
+      "description": "If targeting production, pause and request manager approval before making any changes.",
+      "condition": "{{tenant_config.require_approval}} == true",
+      "if_true": {
+        "type": "approval_action",
+        "name": "Request manager approval",
+        "connection": "slack_connection",
+        "input": {
+          "channel": "#identity-ops",
+          "message": ":warning: *Approval required* — SAML app provisioning to *{{tenant_config.label}}*\n\nApp: *{{trigger.app_label}}*\nACS URL: `{{trigger.sso_acs_url}}`\nAudience URI: `{{trigger.audience_uri}}`\nRequested by: {{trigger.requestor_email}}\nGroups: {{trigger.groups | join: ', '}}\n\nReact with :white_check_mark: to approve or :x: to deny.",
+          "timeout_minutes": 1440,
+          "approval_type": "slack_reaction",
+          "approve_reaction": "white_check_mark",
+          "deny_reaction": "x"
+        },
+        "on_deny": {
+          "actions": [
+            {
+              "type": "email_action",
+              "name": "Notify requestor of denial",
+              "connection": "smtp_connection",
+              "input": {
+                "to": "{{trigger.requestor_email}}",
+                "subject": "SAML provisioning denied for {{trigger.app_label}}",
+                "body": "Hi,\n\nYour request to provision the SAML application \"{{trigger.app_label}}\" in the {{tenant_config.label}} Okta tenant was denied.\n\nPlease contact the Identity team for more details.\n\nThanks,\nIdentity Automation (Workato)"
+              }
+            },
+            {
+              "type": "stop_recipe"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "step": 4,
+      "type": "okta_action",
+      "name": "Search for existing application",
+      "connection": "{{tenant_config.okta_connection}}",
+      "operation": "search_applications",
+      "input": {
+        "query": "{{trigger.app_label}}",
+        "limit": 10
+      },
+      "output_variable": "existing_apps"
+    },
+    {
+      "step": 5,
+      "type": "conditional",
+      "name": "Check if app already exists",
+      "condition": "{{existing_apps | where: 'label', trigger.app_label | size}} > 0",
+      "if_true": {
+        "action": "update_saml_app",
+        "goto_step": 7
+      },
+      "if_false": {
+        "action": "create_saml_app",
+        "goto_step": 6
+      }
+    },
+    {
+      "step": 6,
+      "type": "okta_action",
+      "name": "Create SAML 2.0 application",
+      "connection": "{{tenant_config.okta_connection}}",
+      "operation": "create_application",
+      "input": {
+        "label": "{{trigger.app_label}}",
+        "signOnMode": "SAML_2_0",
+        "visibility": {
+          "autoSubmitToolbar": false,
+          "hide": { "iOS": false, "web": false }
+        },
+        "settings": {
+          "signOn": {
+            "ssoAcsUrl": "{{trigger.sso_acs_url}}",
+            "audience": "{{trigger.audience_uri}}",
+            "recipient": "{{trigger.recipient_url | default: trigger.sso_acs_url}}",
+            "destination": "{{trigger.destination_url | default: trigger.sso_acs_url}}",
+            "defaultRelayState": "{{trigger.default_relay_state | default: ''}}",
+            "subjectNameIdFormat": "{{trigger.name_id_format | default: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress'}}",
+            "subjectNameIdTemplate": "${{{trigger.name_id_value | default: 'user.email'}}}",
+            "responseSigned": "{{trigger.response_signed | default: true}}",
+            "assertionSigned": "{{trigger.assertion_signed | default: true}}",
+            "signatureAlgorithm": "{{trigger.signature_algorithm | default: 'RSA-SHA256'}}",
+            "digestAlgorithm": "{{trigger.digest_algorithm | default: 'SHA256'}}",
+            "honorForceAuthn": true,
+            "authnContextClassRef": "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+            "attributeStatements": "{{trigger.attribute_statements | default: default_attribute_statements}}"
+          }
+        }
+      },
+      "default_attribute_statements": [
+        {
+          "type": "EXPRESSION",
+          "name": "email",
+          "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+          "values": ["user.email"]
+        },
+        {
+          "type": "EXPRESSION",
+          "name": "firstName",
+          "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+          "values": ["user.firstName"]
+        },
+        {
+          "type": "EXPRESSION",
+          "name": "lastName",
+          "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+          "values": ["user.lastName"]
+        }
+      ],
+      "output_variable": "configured_app"
+    },
+    {
+      "step": 7,
+      "type": "okta_action",
+      "name": "Update existing SAML application",
+      "description": "Only runs if step 5 found an existing app.",
+      "connection": "{{tenant_config.okta_connection}}",
+      "operation": "update_application",
+      "input": {
+        "app_id": "{{existing_apps | where: 'label', trigger.app_label | first | map: 'id'}}",
+        "label": "{{trigger.app_label}}",
+        "signOnMode": "SAML_2_0",
+        "settings": {
+          "signOn": {
+            "ssoAcsUrl": "{{trigger.sso_acs_url}}",
+            "audience": "{{trigger.audience_uri}}",
+            "recipient": "{{trigger.recipient_url | default: trigger.sso_acs_url}}",
+            "destination": "{{trigger.destination_url | default: trigger.sso_acs_url}}",
+            "defaultRelayState": "{{trigger.default_relay_state | default: ''}}",
+            "subjectNameIdFormat": "{{trigger.name_id_format | default: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress'}}",
+            "subjectNameIdTemplate": "${{{trigger.name_id_value | default: 'user.email'}}}",
+            "responseSigned": "{{trigger.response_signed | default: true}}",
+            "assertionSigned": "{{trigger.assertion_signed | default: true}}",
+            "signatureAlgorithm": "{{trigger.signature_algorithm | default: 'RSA-SHA256'}}",
+            "digestAlgorithm": "{{trigger.digest_algorithm | default: 'SHA256'}}",
+            "honorForceAuthn": true,
+            "authnContextClassRef": "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+            "attributeStatements": "{{trigger.attribute_statements | default: default_attribute_statements}}"
+          }
+        }
+      },
+      "output_variable": "configured_app"
+    },
+    {
+      "step": 8,
+      "type": "okta_action",
+      "name": "Activate application",
+      "connection": "{{tenant_config.okta_connection}}",
+      "operation": "activate_application",
+      "input": {
+        "app_id": "{{configured_app.id}}"
+      }
+    },
+    {
+      "step": 9,
+      "type": "loop",
+      "name": "Assign groups to application",
+      "collection": "{{trigger.groups}}",
+      "loop_variable": "group_name",
+      "actions": [
+        {
+          "step": "9a",
+          "type": "okta_action",
+          "name": "Look up group by name",
+          "connection": "{{tenant_config.okta_connection}}",
+          "operation": "search_groups",
+          "input": {
+            "query": "{{group_name}}",
+            "limit": 5
+          },
+          "output_variable": "found_groups"
+        },
+        {
+          "step": "9b",
+          "type": "conditional",
+          "name": "Assign group if found",
+          "condition": "{{found_groups | size}} > 0",
+          "if_true": {
+            "type": "okta_action",
+            "name": "Assign group to app",
+            "connection": "{{tenant_config.okta_connection}}",
+            "operation": "assign_group_to_application",
+            "input": {
+              "app_id": "{{configured_app.id}}",
+              "group_id": "{{found_groups.first.id}}"
+            }
+          },
+          "if_false": {
+            "type": "logger",
+            "message": "[{{tenant_config.label}}] Group '{{group_name}}' not found in Okta – skipping."
+          }
+        }
+      ]
+    },
+    {
+      "step": 10,
+      "type": "okta_action",
+      "name": "Retrieve IdP metadata",
+      "connection": "{{tenant_config.okta_connection}}",
+      "operation": "get_application_metadata",
+      "input": {
+        "app_id": "{{configured_app.id}}"
+      },
+      "output_variable": "idp_metadata"
+    },
+    {
+      "step": 11,
+      "type": "email_action",
+      "name": "Send metadata to requestor",
+      "connection": "smtp_connection",
+      "input": {
+        "to": "{{trigger.requestor_email}}",
+        "subject": "[{{tenant_config.label}}] SAML SSO configured for {{trigger.app_label}}",
+        "body": "Hi,\n\nYour SAML application \"{{trigger.app_label}}\" has been configured in the {{tenant_config.label}} Okta tenant.\n\nTenant:  {{tenant_config.label}} ({{tenant_config.org_url}})\nApp ID:  {{configured_app.id}}\nSSO URL: {{configured_app.settings.signOn.ssoAcsUrl}}\n\nThe IdP metadata XML is attached. Upload it to your service provider to complete the SSO setup.\n\nThanks,\nIdentity Automation (Workato)"
+      },
+      "attachments": [
+        {
+          "filename": "idp_metadata_{{trigger.app_label | downcase | replace: ' ', '_'}}.xml",
+          "content": "{{idp_metadata}}"
+        }
+      ]
+    },
+    {
+      "step": 12,
+      "type": "slack_action",
+      "name": "Notify IT channel",
+      "connection": "slack_connection",
+      "input": {
+        "channel": "#identity-ops",
+        "message": ":white_check_mark: SAML app *{{trigger.app_label}}* configured in *{{tenant_config.label}}* (`{{tenant_config.org_url}}`) by Workato.\nRequested by: {{trigger.requestor_email}}\nApp ID: `{{configured_app.id}}`\nGroups: {{trigger.groups | join: ', '}}"
+      }
+    }
+  ],
+  "error_handling": {
+    "on_error": {
+      "type": "slack_action",
+      "name": "Notify on failure",
+      "connection": "slack_connection",
+      "input": {
+        "channel": "#identity-ops",
+        "message": ":x: Workato recipe failed to configure SAML app *{{trigger.app_label}}* in *{{tenant_config.label}}*.\nError: {{error.message}}\nRequested by: {{trigger.requestor_email}}\nTenant: {{trigger.tenant}}"
+      }
+    }
+  },
+  "connections": {
+    "okta_connection_prod": {
+      "provider": "okta",
+      "auth_type": "api_token",
+      "org_url": "https://your-company.okta.com",
+      "notes": "Production Okta connection. Requires an API token with Application Administrator privileges. Configure in Workato UI: App Connections > Okta."
+    },
+    "okta_connection_preview": {
+      "provider": "okta",
+      "auth_type": "api_token",
+      "org_url": "https://your-company.oktapreview.com",
+      "notes": "Preview/staging Okta connection. Configure in Workato UI: App Connections > Okta."
+    },
+    "okta_connection_dev": {
+      "provider": "okta",
+      "auth_type": "api_token",
+      "org_url": "https://dev-123456.okta.com",
+      "notes": "Development sandbox Okta connection. Configure in Workato UI: App Connections > Okta."
+    },
+    "smtp_connection": {
+      "provider": "smtp",
+      "notes": "Email provider for sending metadata to requestors. Configure in Workato UI: App Connections > SMTP."
+    },
+    "slack_connection": {
+      "provider": "slack",
+      "notes": "Slack bot for #identity-ops notifications and production approval prompts. Needs posting + reactions permissions."
+    }
+  }
+}

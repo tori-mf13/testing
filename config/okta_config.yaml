@@ -1,0 +1,60 @@
+# Okta Tenant Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Define every Okta tenant (org) your team operates. The script will present
+# these as a numbered menu so the operator always knows exactly which
+# environment they are targeting.
+#
+# API tokens:
+#   Store tokens in environment variables, NOT in this file. The env var
+#   name for each tenant is listed in the "token_env_var" field. The script
+#   reads the token from that env var at runtime.
+#
+#   To create an API token:
+#     1. Sign in to the Okta Admin Console for that tenant
+#     2. Navigate to Security > API > Tokens
+#     3. Click "Create Token" — name it clearly (e.g. "saml-config-prod")
+#     4. Copy the token value — it is shown only once
+#     5. Export it:  export OKTA_API_TOKEN_PROD="<token>"
+# ─────────────────────────────────────────────────────────────────────────────
+
+tenants:
+  # ── Production ─────────────────────────────────────────────────────────
+  - name: "Production"
+    org_url: "https://your-company.okta.com"
+    token_env_var: "OKTA_API_TOKEN_PROD"
+    # Extra confirmation prompt before any write operation
+    require_confirmation: true
+    description: "Live production tenant — changes affect all employees"
+
+  # ── Preview / Staging ──────────────────────────────────────────────────
+  - name: "Preview"
+    org_url: "https://your-company.oktapreview.com"
+    token_env_var: "OKTA_API_TOKEN_PREVIEW"
+    require_confirmation: false
+    description: "Pre-production preview tenant — safe for testing"
+
+  # ── Development / Sandbox ──────────────────────────────────────────────
+  - name: "Development"
+    org_url: "https://dev-123456.okta.com"
+    token_env_var: "OKTA_API_TOKEN_DEV"
+    require_confirmation: false
+    description: "Developer sandbox — free to experiment"
+
+# ─── Defaults ────────────────────────────────────────────────────────────────
+# Default SAML values applied to every application unless overridden in
+# config/saml_apps.yaml.
+defaults:
+  sign_on_mode: "SAML_2_0"
+  name_id_format: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+  name_id_value: "user.email"
+  response_signed: true
+  assertion_signed: true
+  signature_algorithm: "RSA-SHA256"
+  digest_algorithm: "SHA256"
+  honor_force_authn: true
+  authn_context_class: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"
+
+# ─── Logging ─────────────────────────────────────────────────────────────────
+logging:
+  level: "INFO"         # DEBUG, INFO, WARNING, ERROR
+  file: "okta_saml.log" # Log file path (empty string disables file logging)
